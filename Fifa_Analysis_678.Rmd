@@ -1,0 +1,352 @@
+---
+title: "2017-2018 FIFA Player Market Value Analysis"
+author: Samuel Luo
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Abstract: 
+
+This is a statistical report about the market value of soccer players. The goal for this report is to explore the factors that would probably affect a player's market value, and use them to perform the model analysis. The method I used is applying a linear regression model with four related variables (clubs, reputation, positions, and age) to predict log of player's value. The result is that player's age has a very big impact on reducing their market value. Players in position Attack and Midfield tend to gain more market value than plays in position Defense and Goalkeeper. The more reputation would result in more market value a player will get. Thus, the four related variables do have effects on a player's market value and they might be used for predicting the player's market value.
+
+#Introduction: 
+
+#1.1 Background: 
+
+In recent years, plenty of new young football (Soccer) players come into people's view and show their skills and strengths. Presenting in top leagues, they become famous and their personal values are increasing gradually and rapidly. We know that soccer players' personal market value might largely depend on their ability to strike goals or defense against opponents. But are there any other factors play roles to affect football player's personal value? How it could be changed because of these factors? I am willing to perform model analysis to represent and interpret the relationship of athletes' value and other effects which are highly connected with it.
+
+
+#1.2 Data Sources:
+
+The datasets I used for performing this analysis, 'Complete FIFA 2017 Player Dataset Global' and 'FIFA18 More Complete Player Dataset', are obtained from Kaggle website, but they are originally scraped from a reputed soccer website called Sofifa.com. I believe that the variables of these datasets are relatively reliable and credible, especially the reputation grading, which are computed by precision operations, is of certain referential values. Once again, the expected goal for me is to create models which would effectively represent what influents player's value and if applicable, this model can do prediction for new player's value.
+
+#1.3 Previous Work: Data combining and cleaning.
+```{r}
+library(tidyverse)
+library(dplyr)
+library(gridExtra)
+
+#Firstly, Import two datasets from Kaggle, which are originally scraped from official website Sofifa.com.
+fifadata = read.csv(file = "complete.csv", stringsAsFactors = FALSE)
+secdata= read.csv(file = "FullData.csv")
+
+#Select the potential related variables in both datasets and rename them to be clarified easily.
+fifadata_new <- dplyr::select(fifadata, full_name, club, age, league, height_cm, weight_kg, nationality, eur_value, eur_wage, international_reputation, overall)
+colnames(fifadata_new) <- c("Name", "Club", "Age", "League", "Height", "Weight", "Country", "Value", "Wage", "Reputation", "Official_rating")
+
+secdata_new <- dplyr::select(secdata, Name, Club_Position, Club_Kit, Preffered_Foot)
+colnames(secdata_new) <- c("Name", "Position", "Kit","Prefer_foot")
+
+#Combine two dataframes by name to be a new completed dataframe and erase rows which contain NAs.
+completedfifa <- merge(x = fifadata_new, y = secdata_new, by = "Name", all.x = TRUE)
+row.has.na <- apply(completedfifa, 1, function(x){any(is.na(x))})
+completedfifa = completedfifa[!row.has.na,]
+```
+
+```{r}
+#Calculate and list the total number of different positions, so that regroup them into several main position groups later. 
+#Calculate and list the total clubs. Prepare for future use. 
+positiontype <- completedfifa %>%
+    group_by(Position) %>% 
+    count()
+positiontype
+
+clubcount <- completedfifa %>%
+  group_by(Club) %>%
+  count()
+clubcount
+# Main positions:
+
+# GK: 
+# Goalkeeper
+
+# Defense: 
+# CB: Center-back 
+# LCB: Left center-back 
+# RCB: Right center-back 
+# LB: Left-back (Full-back) 
+# RB: Right-back (Full-back) 
+# RWB: Left wing back 
+# LWB: Right wing back
+
+# Midfield: 
+# CM : Centre midfield 
+# LDM: Left defensive midfield 
+# LAM: Left attacking midfield 
+# RDM: Right defensive midfield 
+# RAM: Right attacking midfield 
+# CDM: Centre defensive midfield 
+# CAM: Centre attacking midfield 
+# LM : Left midfield 
+# RM : Right midfield 
+# LCM: Left center midfield # RCM: Right center midfield
+
+# Attack: 
+# ST: Striker
+# CF: Center forward
+# LW: Left winger
+# RW: Right winger
+# LF: Left forward
+# LS: Left Striker
+# RF: Right forward
+# RS: Right Striker
+
+# Other: 
+# Sub: Subtitute
+# Res: Reserve
+```
+
+```{r}
+#delete substitue and reserve players as well as the players in secondary leagues so that we can focus on the key players in top leagues of the world.
+completedfifa <- completedfifa[-which(completedfifa$Position == "Res"),]
+completedfifa <- completedfifa[-which(completedfifa$Position == "Sub"),]
+
+#Now group the positions according to their features and we name them to be:Goalkeeper, Defense, Midfield, Attack.
+factorpos <- as.factor(completedfifa$Position)
+levels(factorpos) <- list(Goalkeep  = c("GK"), Defense = c("CB", "LCB", "RCB", "RB", "LB", "RWB", "LWB"), Midfield = c("LM","LDM","RDM","CDM","CM","LAM","RAM","CAM","RM","LCM", "RCM"), Attack = c("CF", "ST","LW","RW","LF","LS","RF","RS"))
+completedfifa <- mutate(completedfifa, Position = factorpos)
+
+```
+
+```{r}
+#Clean the abnormal value found in fitting model.
+library(lme4)
+completedfifa <- completedfifa[-which(log(completedfifa$Value)== -Inf),]
+completedfifa <- completedfifa[-which(completedfifa$Club== "Cerezo Osaka"),]
+completedfifa <- completedfifa[-which(completedfifa$Club== "Jeonnam Dragons"),]
+completedfifa <- completedfifa[-which(completedfifa$Club== "Sevilla Atlético"),]
+completedfifa <- completedfifa[-which(completedfifa$Club== "Urawa Red Diamonds"),]
+completedfifa <- completedfifa[-which(completedfifa$Club== "VVV-Venlo"),]
+```
+#1.4 Data EDA Visualization
+
+#Value in EURO
+```{r}
+###Basic visualed distribution of soccer players.
+#VALUE in EURO.
+#player's personal value distribution in EURO.
+ggplot(data = completedfifa, aes(x = Value))+
+geom_bar(color ="skyblue") + ggtitle("Distribution of Player's value scale")
+
+#log of player's personal value distribution.
+ggplot(data = completedfifa, aes(x = log(Value)))+ geom_bar(color ="skyblue") + ggtitle("Distribution: log of Player's value scale")
+```
+
+From the simple distribution plot of Player's value, we can find out that most of the player's value is much lower than 2.5e+07 EURO. But for a few players, their value could be two times or even around four times 2.5e+07 EURO. Based on the fact that most of the values are lay on the left corner and a few values' plots are too far from the majority, it would be better to do log transformation for player's value during fitting model. 
+
+#Club
+```{r}
+#Relationship between Club and log(Value)
+ggplot(completedfifa, aes(x = Club, y= log(Value))) + geom_point(color ="skyblue")  + ggtitle("Relationship between player's Club and log(Value)")
+
+```
+
+In fact, players from some clubs do have more values in EURO compare to others, which we can assume that a soccer player's value might partly depend on which club the player works for. 
+
+#Player's age
+```{r}
+#AGE.
+#Age distribution of players.
+ggplot(data = completedfifa, aes(x = Age))+
+geom_bar(color = "red") + ggtitle("Distribution of Player's Age")
+
+#Age vs. value
+ggplot(completedfifa, aes(x = Age, y= log(Value))) + geom_smooth() + geom_point(color="skyblue")  + geom_smooth() + ggtitle("Relationship between Age and log(Value)")
+```
+
+By looking at the simple distribution of Player's age, players that in their 20+ make up most of the population of soccer players. After taking player's log(value) into account, the second plot a linear relationship that log(value) has slightly increase when young players are approaching their 20s, and then log(value) begins to decrease more and more after around 30 years old. Since the regression line looks like a parabola, I might use poly transformation for this variable in the model. 
+
+#Player's reputation
+
+```{r}
+#Reputation
+#Player's Reputation distribution.
+ggplot(data = completedfifa, aes(x = Reputation))+ geom_bar(color= "red") + 
+ggtitle("Distribution of Player's reputation")
+
+#Distribution of relationship between players' value and reputation.
+ggplot(completedfifa, aes(x = Reputation, y= log(Value))) + geom_point(color ="skyblue") + ggtitle("Distribution between Reputation and Value based on Positions")
+```
+
+About the players' reputation, most of them do not have much popularity. As the grading of reputation increases, the number of corresponding players is obviously decreasing. After adding the variable log(Value) into the visual, reputation seems to have certain effects on the players' market value. The more reputation will result in the more market value a player has.
+
+#Position of player
+
+```{r}
+#Positions.
+ggplot(data = completedfifa, aes(x = Position))+
+geom_bar(color = "red") + ggtitle("Distribution of Player's Position")
+
+ggplot(completedfifa, aes(x = Age, y= log(Value))) + geom_point(color ="skyblue")  + geom_smooth() + facet_wrap(.~Position) + ggtitle("Relationship of Age and Value based on Positions")
+
+ggplot(completedfifa, aes(x = Reputation, y= log(Value))) + geom_point(color ="skyblue")  + geom_smooth() + facet_wrap(.~Position) + ggtitle("Relationship of Reputation and Value based on Positions")
+```
+
+Right now make Player's positions come into account. First, the population of goalkeeper and attack is relatively lower than that of defense and midfield. Then, for the relationships of value and other variables based on player's positions. This relationship distribution reveals that players whose position are attack and midfield make relatively more chance to have higher market value.
+
+#Method: 
+
+#2.1 Model choices
+
+I use nearly 4/5 of the total data for fitting models and then predict the rest of the data in the model checking part.
+
+#Choice1: Linear regression 
+```{r}
+options(max.print=99999)
+#linear model lm.
+soccer1 <- lm(data = completedfifa[1:4000,], log(Value) ~ Club + Reputation + Position + poly(Age,2))
+summary(soccer1)
+
+plot(soccer1)
+anova(soccer1) #All coefficients are significant
+```
+
+This linear regression model fits well. In this model's summary, the R-squared for this model is around 80% and the p-value is very small which is about 2.2e-16. By looking at the residual plot, plots seem like equally distributed and symmetric along the horizontal line. In addition, QQplot looks well too, since all of the plots are close to the straight line. Finally, by using ANOVA to test the coefficients, the result shows that all of the coefficients are significant. Thus, this might be an appropriate model for doing a deeper analysis.
+
+#Choice2: Mutilevel model 
+Here I fitted three multilevel models, and later I would evaluate these models by using ANOVA test comparison.
+
+#a) One random effect: Club
+
+```{r}
+soccer2 <- lmer(data = completedfifa[1:4000,], log(Value) ~ (1|Club) + Reputation + Position + poly(Age,2))
+summary(soccer2) 
+
+plot(soccer2)
+```
+
+#b) Two random effect: Club and Position
+```{r}
+soccer3 <- lmer(data = completedfifa[1:4000,], log(Value) ~ (1|Club) + Reputation + (1|Position) + poly(Age,2))
+display(soccer3)
+
+plot(soccer3)
+```
+#C) Ramdon slope: Position comes into account.
+```{r}
+soccer4 <- lmer(data = completedfifa[1:4000,], log(Value) ~ (1+Position|Club) + Reputation + poly(Age,2))
+summary(soccer4)
+
+plot(soccer4)
+```
+
+We cannot find out which one is the best-fitted model by looking at their model summaries. And since they are all multilevel models with the same variables, their residual plots looks like the same. In order to evaluate these models, I used the ANOVA test to do the comparison.
+
+#Anova test for multilevel models
+```{r}
+anova(soccer2,soccer3,soccer4, soccer1)
+```
+
+According to the ANOVA test, among the multilevel models, soccer 2 with one random effect is more appropriate since it fits significantly better but others are totally not. Here comes the comparison of linear model soccer1 and multilevel model soccer2. 
+
+#Anova test for multilevel model and linear model.
+```{r}
+anova(soccer2, soccer1)
+```
+
+As the result of ANOVA test shows, soccer1 fits significantly better than soccer2, and the P-value is really small. In addition, the median residual of linear model soccer 1 is 0.000, while the median residual of multilevel model soccer2 is -0.0042, which means that soccer 1 fits slightly better than soccer2. So finally the linear model might be more appropriate for interpretation.
+
+#3.1 Model used and interpretation
+
+Let's recall the summary of linear model soccer1.
+
+```{r}
+
+soccer1 <- lm(data = completedfifa[1:4000,], log(Value) ~ Club + Reputation + Position + poly(Age,2))
+summary(soccer1)
+```
+
+Reputation: We can clearly see that if a player's reputation increases by one unit, then his log(value) increases by 0.713789.
+
+Positions: The coefficient of Defense is 0.003312. The coefficient of Midfield is 0.266148. The coefficient of Attack is 0.425964. We can see that, for Players in the same club with the same age and reputation, players whose positions are Defense would have slightly more personal value in EURO than Goalkeepers. But for players in the same club with same age and reputation whose positions are Midfield and Attack, they would have obviously more market value compared to other positions, which may be because audience and club managers pay more attention to players who can strike the goal.
+
+Age: For variables of age: poly(Age, 1) and poly(Age, 2), which coefficients are -16.216151 and -19.075873, both shows that age has a great influence on players' market value. As players get old, their market value gradually decreases.
+
+
+#3.2 Interpretation for clubs' coefficients.
+
+In order to have a better interpretation for clubs, it would be a good way to divide the clubs into several groups based on their similarities of coefficients. Firstly, I made a list of coefficients corresponding to a list of club names.
+
+```{r}
+#list of clubs' coefficients
+coef = as.numeric(soccer1$coefficients)
+club_coef = coef[2:564]
+club_coef
+
+#list of clubs' names
+coef_name = names(soccer1$coefficients)
+club_name = coef_name[2:564]
+club_name
+```
+
+Then I clustered the clubs based on their coefficients, by using the method called k-means clustering. 
+```{r}
+set.seed(1)
+ClubCluster <- kmeans(club_coef, 3, nstart = 20)
+ClubCluster
+```
+
+From this image, we can find that the coefficients of clubs have been divided into three clusters: (1. -0.1548502) (2. 1.0365419) (3. -1.1493770). Next, I merged the cluster number with corresponding club's name and coefficient to create a new data table 'cluster_df', which is shown below:
+
+```{r}
+cluster <- ClubCluster$cluster
+coef_df <- as.data.frame(soccer1$coefficient[2:564])
+cluster_df <- cbind(club_name, coef_df,cluster)
+rownames(cluster_df) <- 1:nrow(cluster_df)
+colnames(cluster_df) <- c("ClubName", "Coef", "Cluster")
+
+cluster_df
+```
+
+The data table clearly show that many famous soccer clubs are in cluster 2.
+After that I use ggplot to visual the clusters, which is easier to interpret.
+
+```{r}
+ggplot(data=cluster_df, aes(x=Cluster, y=Coef, color=Cluster))+geom_jitter()
+```
+
+From this visual, we can easily find out that the clubs have been divided into three clusters based on their coefficient value. The coefficient of clubs in cluster 1 is near equals to 0, which means that the market value of players who work for these clubs would not be largely affected by their clubs. Similarly, the market value of players who work for clubs in cluster 3 would have a decrease affected by their clubs, while the market value of players who work for clubs in cluster 2, such as Real Madrid and FC Barcelona, would be higher than average because of their clubs.
+
+#Model checking
+
+Right now I use the linear model 'soccer1' to predict the rest of the data for checking the accuracy of this model. And then we use the formula for computing the MAPE (mean absolute percentage error): 
+MAPE = ABS (Actual - predict)/Actual)
+```{r}
+soccer1.predict <- predict(soccer1,completedfifa[4001:4963,])
+
+accuracy <-mean(abs(soccer1.predict - log(completedfifa[4001:4963,]$Value))/log(completedfifa[4001:4963,]$Value))
+accuracy
+
+```
+
+Here we can see that the MAPE value is 3.7%, which means that the model makes a good prediction and it fits well. 
+
+#Discussion
+
+#4.1 Implication
+The model, as well as interpretations, can help people such as club managers and soccer fans roughly predict a player's market value, and understand how it could be changed if the player transfers to another club, makes his reputation decrease for some reasons or becomes older. 
+This model refers that players' age has deeply impacted their market value, which was not I expected. And I thought that positions do not make a difference of market value, but the truth is that the average market value of Attack and Midfield is much higher than Defense and Goalkeeper. 
+
+#4.2 Limitation and Further Direction
+The variables might be not enough for fitting a model of player's market value, because there are too many other possibilities, except for their abilities, might affect their market values such as health condition, club manager's and coach's appreciation, or advertising value. I might find more related variables for fitting a more concrete model, which can be credibly used for predict a soccer player's personal market value. 
+
+
+#Acknowledgement
+
+First, please allow me to express my sincere appreciation to our professor Yajima, who always gave me useful suggestions and encouragement when I met with difficulties in my project, such as model selection and improvement. Also, I would like to thank my teaching assistant and friend, Alice Tao, who kindly offered me suggestions about my method using. With their help, I felt great confidence to accomplish my work.
+
+
+#References
+
+KevinH. (2017, December 26). Fifa 18 More Complete Player Dataset. Retrieved from https://www.kaggle.com/kevinmh/fifa-18-more-complete-player-dataset/data
+
+Agarwal, S. (2017, April 13). Complete FIFA 2017 Player dataset (Global). Retrieved from https://www.kaggle.com/artimous/complete-fifa-2017-player-dataset-global
+
+Verma, A. (2018, May 24). Exploratory Analysis of FIFA 18 dataset using R - Towards Data Science. Retrieved from https://towardsdatascience.com/exploratory-analysis-of-fifa-18-dataset-using-r-ba09aa4a2d3c
+
+
